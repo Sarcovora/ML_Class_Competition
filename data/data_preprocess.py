@@ -36,6 +36,15 @@ def extract_month_year(df, column='Intake Time'):
 
     return df
 
+def assign_breed_frequency(df, column='Breed'):
+    # Calculate the frequency of each breed
+    breed_counts = df[column].value_counts()
+
+    # Assign the actual frequency to the 'Breed_Popularity' column
+    df['Breed'] = df[column].map(breed_counts)
+
+    return df
+
 train_data = pd.read_csv('train.csv', header=0)
 print(('-' * 20) + "Columns before processing" + ('-' * 20))
 print(train_data.columns)
@@ -46,6 +55,7 @@ train_data = pd.get_dummies(train_data, columns=['Intake Condition', 'Intake Typ
 train_data['Age upon Intake'] = train_data['Age upon Intake'].apply(convert_to_weeks)
 train_data = extract_month_year(train_data, column='Intake Time')
 train_data = train_data.drop(columns=['Intake Time'])
+train_data = assign_breed_frequency(train_data, column='Breed')
 print(('-' * 20) + "Columns after processing" + ('-' * 20))
 print(train_data.columns)
 
