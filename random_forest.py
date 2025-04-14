@@ -4,6 +4,7 @@ from sklearn.model_selection import cross_val_score, GridSearchCV, cross_val_pre
 from sklearn.metrics import classification_report
 from sklearn.ensemble import RandomForestClassifier
 
+
 def convert_to_weeks(value):
     value = value.lower()  # Make it case-insensitive
     if 'week' in value:
@@ -19,6 +20,7 @@ def convert_to_weeks(value):
         # Convert days to 0 weeks
         return 0
     return 0  # In case of unexpected values
+
 
 def extract_month_year(df, column='Intake Time'):
     """
@@ -40,7 +42,8 @@ def extract_month_year(df, column='Intake Time'):
 
     return df
 
-def process_data(data):    
+
+def process_data(data):
     data = data.drop(columns=['Id', 'Name', 'Outcome Time'])
     data = data.drop(columns=['Found Location', 'Date of Birth'])
     # data = data.drop(columns=['Breed', 'Color'])
@@ -54,20 +57,30 @@ def process_data(data):
     data.head()
     return data
 
+
+process_count = 12
+
 train_data = pd.read_csv('train.csv', header=0)
 train_data = process_data(train_data)
 train_data.head()
 
 train_x = train_data.drop('Outcome Type', axis=1)
 train_y = train_data['Outcome Type']
-forest = RandomForestClassifier()
+forest = RandomForestClassifier(n_jobs=process_count)
 
 param_grid = {
     'n_estimators': [50, 100, 150, 250, 500],
     'min_samples_leaf': [25, 50, 100, 500, 1000],
     'max_features': [0.5, 0.7, 0.85, 0.95, 1.0],
 }
-grid_search = GridSearchCV(forest, param_grid, cv=5, scoring='accuracy')
+
+# param_grid = {
+#     'n_estimators': [100, 250, 500],
+#     'min_samples_leaf': [1, 5, 10, 25, 50],
+#     'max_features': ['sqrt', 0.6, 0.8, 1.0],
+# }
+
+grid_search = GridSearchCV(forest, param_grid, cv=5, scoring='accuracy', n_jobs=process_count, verbose=3)
 grid_search.fit(train_x, train_y)
 
 print(f"best params: {grid_search.best_params_}")
