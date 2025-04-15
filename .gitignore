@@ -1,5 +1,6 @@
-wandb/
-results/
+wandb-main/
+wandb-bagged/
+results-main/
 
 
 # Byte-compiled / optimized / DLL files
