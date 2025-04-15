@@ -83,7 +83,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = NeuralNet(input_dim, output_dim).to(device)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), learning_rate=0.001)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 # Initialize wandb project
 cur_date_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -144,8 +144,12 @@ if use_wandb:
 
 
 model_save_path = os.path.join('results', run_name + ".pt")
-torch.save({
-    "model": model,
-    "states": model.state_dict(),
-}, model_save_path)
-print("Model weights saved to", model_save_path)
+# torch.save({
+#     "model": model,
+#     "states": model.state_dict(),
+# }, model_save_path)
+# print("Model weights saved to", model_save_path)
+jit_model = torch.jit.script(model)
+torch.jit.save(jit_model, model_save_path)
+
+print("Model saved to", model_save_path)

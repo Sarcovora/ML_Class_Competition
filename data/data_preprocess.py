@@ -1,5 +1,14 @@
 import pandas as pd
 
+isTestFile = True
+if (isTestFile):
+    file_name = 'processed_test_data.pkl'
+    input_name = 'test.csv'
+else: # Train
+    file_name = 'processed_train_data.pkl'
+    input_name = 'train.csv'
+
+
 def convert_to_weeks(value):
     value = value.lower()  # Make it case-insensitive
     if 'week' in value:
@@ -28,7 +37,10 @@ def extract_month_year(df, column='Intake Time'):
         pd.DataFrame: The original DataFrame with additional 'Month' and 'Year' columns.
     """
     # Convert the column to datetime objects. Adjust the format if needed.
-    df[column] = pd.to_datetime(df[column], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
+    if (isTestFile):
+        df[column] = pd.to_datetime(df[column], format='%m/%d/%y %H:%M', errors='coerce')
+    else:
+        df[column] = pd.to_datetime(df[column], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
 
     # Extract the month and year from the datetime column
     df['Intake Month'] = df[column].dt.month
@@ -45,10 +57,13 @@ def assign_breed_frequency(df, column='Breed'):
 
     return df
 
-train_data = pd.read_csv('train.csv', header=0)
+train_data = pd.read_csv(input_name, header=0)
 print(('-' * 20) + "Columns before processing" + ('-' * 20))
 print(train_data.columns)
-train_data = train_data.drop(columns=['Id', 'Name', 'Outcome Time'])
+if (not isTestFile):
+    train_data = train_data.drop(columns=['Name', 'Outcome Time']) # this is not in test dataset
+    train_data = train_data.drop(columns=['Id']) # not relevant to training
+
 train_data = train_data.drop(columns=['Found Location', 'Date of Birth'])
 train_data = train_data.dropna()
 train_data = pd.get_dummies(train_data, columns=['Intake Condition', 'Intake Type', 'Animal Type', 'Sex upon Intake'])
@@ -60,8 +75,8 @@ print(('-' * 20) + "Columns after processing" + ('-' * 20))
 print(train_data.columns)
 
 # save to disk as a serialized file
-train_data.to_pickle('processed_train_data.pkl')
-print("Processed dataset saved as 'processed_train_data.pkl'")
+train_data.to_pickle(file_name)
+print("Processed dataset saved as", file_name)
 
 """
 can load data as:
