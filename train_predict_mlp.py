@@ -13,27 +13,23 @@ import datetime
 from tqdm import tqdm
 import wandb
 
-# --- Configuration ---
-USE_WANDB = True # Set to True to use Weights & Biases
-MODEL_TYPE = 'bagging' # Options: 'single', 'bagging', 'adaboost'
-N_ESTIMATORS = 10      # Number of models for ensembles : NORMALLY 10
-NUM_EPOCHS_PER_ESTIMATOR = 15 # Epochs to train each base estimator : NORMALLY 15
+# --- Configs ---
+USE_WANDB = False
+MODEL_TYPE = 'bagging'  # single, bagging, adaboost
+N_ESTIMATORS = 10
+NUM_EPOCHS_PER_ESTIMATOR = 15
 BATCH_SIZE = 128
 LEARNING_RATE = 0.001
-HIDDEN_DIM_1 = 256  # 256 default
-HIDDEN_DIM_2 = 128  # 128 default
+HIDDEN_DIM_1 = 256
+HIDDEN_DIM_2 = 128
 DROPOUT_RATE = 0.4
-EMBEDDING_DIM_BREED = 4 # Hyperparameter : 16
-EMBEDDING_DIM_COLOR = 3 # Hyperparameter : 10
-VALIDATION_SPLIT = 0.03 # Use 15% of training data for validation
+EMBEDDING_DIM_BREED = 4
+EMBEDDING_DIM_COLOR = 3
+VALIDATION_SPLIT = 0.15
 
-# VAL_4breed_3color_
-
-# --- Utility Functions ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# --- Load Processed Data and Mappings ---
 PROCESSED_DIR = 'processed_data'
 train_data_path = os.path.join(PROCESSED_DIR, 'proc_train_data.pkl')
 mappings_path = os.path.join(PROCESSED_DIR, 'proc_mappings.pkl')
@@ -50,7 +46,7 @@ y_series = train_data_dict['y']
 label_encoders = mappings['label_encoders']
 vocab_sizes = mappings['vocab_sizes']
 numerical_cols = mappings['numerical_cols']
-final_columns = mappings['final_columns'] # All feature columns in order
+final_columns = mappings['final_columns']
 num_classes = len(y_series.unique())
 
 # Identify column indices for the model
@@ -63,7 +59,8 @@ embed_col_indices = {
 numerical_indices = [i for i, col in enumerate(X_df.columns) if '_encoded' not in col]
 
 X_np = X_df.values.astype(np.float32)
-y_np = y_series.values # Already int64
+y_np = y_series.values
+
 
 # --- Create PyTorch Dataset ---
 class MixedInputDataset(Dataset):
@@ -78,7 +75,8 @@ class MixedInputDataset(Dataset):
         if self.labels is not None:
             return self.features[idx], self.labels[idx]
         else:
-            return self.features[idx] # For prediction
+            return self.features[idx]  # For prediction
+
 
 full_dataset = MixedInputDataset(X_np, y_np)
 
@@ -86,38 +84,36 @@ full_dataset = MixedInputDataset(X_np, y_np)
 train_indices, val_indices = train_test_split(
     list(range(len(full_dataset))),
     test_size=VALIDATION_SPLIT,
-    stratify=y_np, # Stratify by target class
+    stratify=y_np,  # Stratify by target class
     random_state=42
 )
 
 train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
 val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
 
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE * 2, shuffle=False) # Larger batch for eval
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE * 2, shuffle=False)  # Larger batch for eval
 
 print(f"Training samples: {len(train_dataset)}, Validation samples: {len(val_dataset)}")
 
-# --- Calculate Class Weights for Weighted Loss ---
-print("Calculating class weights for loss...")
-train_labels = y_np[train_indices] # Get labels only from the training subset
+# Calculate Class Weights for Weighted Loss
+train_labels = y_np[train_indices]  # Get labels only from the training subset
 class_counts = np.bincount(train_labels, minlength=num_classes)
 total_train_samples = len(train_labels)
 
-# Handle potential division by zero if a class is missing in the split (unlikely with stratification)
-class_weights = np.array([total_train_samples / (num_classes * count) if count > 0 else 1.0
-                        for count in class_counts])
+# Handle division by zero if a class is missing in the split
+class_weights = np.array([total_train_samples / (num_classes * count) if count > 0 else 1.0 for count in class_counts])
 
-# Convert to tensor and move to device
 class_weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(device)
 print(f"Class weights: {class_weights_tensor.cpu().numpy()}")
+
 
 # --- Define MLP Model with Embeddings ---
 class MLPWithEmbeddings(nn.Module):
     def __init__(self, num_numerical_features, vocab_sizes, embedding_dims,
                  hidden_dims, output_dim, dropout_rate):
         super().__init__()
-        self.embed_col_indices = embed_col_indices # Store indices
-        self.numerical_indices = numerical_indices # Store indices
+        self.embed_col_indices = embed_col_indices
+        self.numerical_indices = numerical_indices
 
         # Embedding layers
         self.embedding_breed = nn.Embedding(vocab_sizes['Breed'], embedding_dims['Breed'])
@@ -127,7 +123,6 @@ class MLPWithEmbeddings(nn.Module):
         input_dim = num_numerical_features + total_embedding_dim
         print("input dim:", input_dim, "num_numerical_featues:", num_numerical_features, "total_embedding_dim:", total_embedding_dim)
 
-        # Dense layers
         self.fc1 = nn.Linear(input_dim, hidden_dims[0])
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout_rate)
@@ -137,10 +132,9 @@ class MLPWithEmbeddings(nn.Module):
         self.fc_out = nn.Linear(hidden_dims[1], output_dim)
 
     def forward(self, x):
-        # Separate inputs
-        numerical_input = x[:, self.numerical_indices].float() # Ensure float
-        breed_input = x[:, self.embed_col_indices['Breed']].long() # Indices must be long
-        color_input = x[:, self.embed_col_indices['Color']].long() # Indices must be long
+        numerical_input = x[:, self.numerical_indices].float()
+        breed_input = x[:, self.embed_col_indices['Breed']].long()
+        color_input = x[:, self.embed_col_indices['Color']].long()
 
         # Process embeddings
         embed_breed = self.embedding_breed(breed_input)
@@ -149,11 +143,11 @@ class MLPWithEmbeddings(nn.Module):
         # Concatenate
         combined = torch.cat([numerical_input, embed_breed, embed_color], dim=1)
 
-        # Pass through dense layers
         out = self.dropout1(self.relu1(self.fc1(combined)))
         out = self.dropout2(self.relu2(self.fc2(out)))
-        out = self.fc_out(out) # Logits output
+        out = self.fc_out(out)
         return out
+
 
 def train_one_epoch(model, loader, criterion, optimizer, device, sample_weights=None):
     model.train()
@@ -168,22 +162,22 @@ def train_one_epoch(model, loader, criterion, optimizer, device, sample_weights=
         sampler = WeightedRandomSampler(weights_tensor, len(weights_tensor), replacement=True)
         current_loader = DataLoader(loader.dataset, batch_size=BATCH_SIZE, sampler=sampler)
     else:
-        # Use provided loader directly (handles SubsetRandomSampler for Bagging)
         current_loader = loader
 
 
-    for inputs, labels in current_loader: # Use the potentially weighted loader
+    for inputs, labels in current_loader:  # Use the potentially weighted loader
         inputs, labels = inputs.to(device), labels.to(device)
         num_samples += inputs.size(0)
 
         optimizer.zero_grad()
-        outputs = model(inputs) # Logits
+        outputs = model(inputs)  # Logits
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-        running_loss += loss.item() * inputs.size(0) # Weighted by batch size
+        running_loss += loss.item() * inputs.size(0)  # Weighted by batch size
 
-    return running_loss / len(loader.dataset) # Average loss over all samples in the original subset
+    return running_loss / len(loader.dataset)  # Average loss over all samples in the original subset
+
 
 def evaluate_model(model, loader, device):
     model.eval()
@@ -192,11 +186,12 @@ def evaluate_model(model, loader, device):
     with torch.no_grad():
         for inputs, labels in loader:
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs) # Logits
+            outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
     return accuracy_score(all_labels, all_preds), balanced_accuracy_score(all_labels, all_preds)
+
 
 # --- Model Initialization ---
 num_numerical = len(numerical_indices)
@@ -209,25 +204,23 @@ model_args = {
     'dropout_rate': DROPOUT_RATE
 }
 
-# --- WandB Setup ---
 if USE_WANDB:
     cur_date_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"{MODEL_TYPE}_MLP_{cur_date_time}"
     wandb.init(entity='evan-kuo-edu', name=run_name, project="ML_Course_Project_Animal_Outcomes", config={ # CHANGE ENTITY
-        "model_type": MODEL_TYPE,
-        "n_estimators": N_ESTIMATORS if MODEL_TYPE != 'single' else 1,
-        "epochs_per_estimator": NUM_EPOCHS_PER_ESTIMATOR,
-        "batch_size": BATCH_SIZE,
-        "learning_rate": LEARNING_RATE,
-        "dropout": DROPOUT_RATE,
-        "hidden_dims": [HIDDEN_DIM_1, HIDDEN_DIM_2],
-        "embed_breed": EMBEDDING_DIM_BREED,
-        "embed_color": EMBEDDING_DIM_COLOR,
-        "validation_split": VALIDATION_SPLIT
-    })
+                                                                                                          "model_type": MODEL_TYPE,
+                                                                                                          "n_estimators": N_ESTIMATORS if MODEL_TYPE != 'single' else 1,
+                                                                                                          "epochs_per_estimator": NUM_EPOCHS_PER_ESTIMATOR,
+                                                                                                          "batch_size": BATCH_SIZE,
+                                                                                                          "learning_rate": LEARNING_RATE,
+                                                                                                          "dropout": DROPOUT_RATE,
+                                                                                                          "hidden_dims": [HIDDEN_DIM_1, HIDDEN_DIM_2],
+                                                                                                          "embed_breed": EMBEDDING_DIM_BREED,
+                                                                                                          "embed_color": EMBEDDING_DIM_COLOR,
+                                                                                                          "validation_split": VALIDATION_SPLIT
+                                                                                                          })
 
-# --- Training Logic ---
-criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)  # use class weights
 
 if MODEL_TYPE == 'single':
     print("--- Training Single MLP ---")
@@ -238,20 +231,19 @@ if MODEL_TYPE == 'single':
     best_val_balanced_acc = -1
     best_model_state = None
 
-    for epoch in range(NUM_EPOCHS_PER_ESTIMATOR * N_ESTIMATORS): # Train longer for single model
+    for epoch in range(NUM_EPOCHS_PER_ESTIMATOR * N_ESTIMATORS):
         epoch_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_acc, val_balanced_acc = evaluate_model(model, val_loader, device)
         print(f'Epoch [{epoch + 1}], Loss: {epoch_loss:.4f}, Val Acc: {val_acc:.4f}, Val Bal Acc: {val_balanced_acc:.4f}')
 
         if USE_WANDB:
-             wandb.log({"epoch": epoch + 1, "loss": epoch_loss, "val_accuracy": val_acc, "val_balanced_accuracy": val_balanced_acc})
+            wandb.log({"epoch": epoch + 1, "loss": epoch_loss, "val_accuracy": val_acc, "val_balanced_accuracy": val_balanced_acc})
 
         if val_balanced_acc > best_val_balanced_acc:
-             best_val_balanced_acc = val_balanced_acc
-             best_model_state = model.state_dict()
-             print(f"  * New best validation balanced accuracy: {best_val_balanced_acc:.4f}")
+            best_val_balanced_acc = val_balanced_acc
+            best_model_state = model.state_dict()
+            print(f"  * New best validation balanced accuracy: {best_val_balanced_acc:.4f}")
 
-    # Load best model state for final evaluation if needed
     if best_model_state:
         model.load_state_dict(best_model_state)
     final_val_acc, final_val_bal_acc = evaluate_model(model, val_loader, device)
@@ -259,7 +251,6 @@ if MODEL_TYPE == 'single':
     print(f"Final Single Model Validation Balanced Accuracy: {final_val_bal_acc:.4f}")
     if USE_WANDB:
         wandb.log({"final_val_accuracy": final_val_acc, "final_val_balanced_accuracy": final_val_bal_acc})
-    # Save the single best model
     torch.save(model.state_dict(), f"single_mlp_best_{cur_date_time}.pt")
 
 
@@ -271,9 +262,9 @@ elif MODEL_TYPE == 'bagging':
     for i in range(N_ESTIMATORS):
         print(f"\nTraining Estimator {i + 1}/{N_ESTIMATORS}...")
         # Create bootstrap sample indices
-        bootstrap_indices = resample(train_indices, n_samples=n_train_samples, replace=True, random_state=i) # Seed for reproducibility
+        bootstrap_indices = resample(train_indices, n_samples=n_train_samples, replace=True, random_state=i)
         bootstrap_sampler = SubsetRandomSampler(bootstrap_indices)
-        train_loader = DataLoader(full_dataset, batch_size=BATCH_SIZE, sampler=bootstrap_sampler) # Sample from full dataset using bootstrap indices
+        train_loader = DataLoader(full_dataset, batch_size=BATCH_SIZE, sampler=bootstrap_sampler)
 
         model = MLPWithEmbeddings(**model_args).to(device)
         optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -282,13 +273,12 @@ elif MODEL_TYPE == 'bagging':
             epoch_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
             # Optional: evaluate on validation set per epoch if desired
             if (epoch + 1) % 5 == 0: # Evaluate less frequently
-                 val_acc, val_balanced_acc = evaluate_model(model, val_loader, device)
-                 print(f' Estimator {i+1}, Epoch [{epoch + 1}], Loss: {epoch_loss:.4f}, Val Bal Acc: {val_balanced_acc:.4f}')
-                 if USE_WANDB:
-                     wandb.log({f"estimator_{i+1}_epoch": epoch+1, f"estimator_{i+1}_loss": epoch_loss, f"estimator_{i+1}_val_balanced_acc": val_balanced_acc})
+                val_acc, val_balanced_acc = evaluate_model(model, val_loader, device)
+                print(f' Estimator {i+1}, Epoch [{epoch + 1}], Loss: {epoch_loss:.4f}, Val Bal Acc: {val_balanced_acc:.4f}')
+                if USE_WANDB:
+                    wandb.log({f"estimator_{i + 1}_epoch": epoch + 1, f"estimator_{i+1}_loss": epoch_loss, f"estimator_{i+1}_val_balanced_acc": val_balanced_acc})
 
-
-        estimators.append(model.eval()) # Store model in eval mode
+        estimators.append(model.eval())
 
     # Evaluate the ensemble
     print("\n--- Evaluating Bagging Ensemble ---")
@@ -299,7 +289,7 @@ elif MODEL_TYPE == 'bagging':
             inputs = inputs.to(device)
             batch_probs = []
             for model in estimators:
-                outputs = model(inputs) # Logits
+                outputs = model(inputs)
                 probs = torch.softmax(outputs, dim=1)
                 batch_probs.append(probs.cpu().numpy())
             # Average probabilities across estimators for this batch
@@ -326,15 +316,14 @@ elif MODEL_TYPE == 'adaboost':
     estimators = []
     alphas = []
     n_train_samples = len(train_dataset)
-    sample_weights = np.ones(n_train_samples) / n_train_samples # Start uniform
+    sample_weights = np.ones(n_train_samples) / n_train_samples
 
     # Need labels for the training subset to calculate errors/update weights
     train_subset_labels = y_np[train_indices]
 
     # Create a loader for the *entire* training subset for error calculation
     # No shuffling needed here as we use indices directly
-    full_train_subset_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE*2, shuffle=False)
-
+    full_train_subset_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=False)
 
     for i in range(N_ESTIMATORS):
         print(f"\nTraining Estimator {i + 1}/{N_ESTIMATORS}...")
@@ -343,19 +332,18 @@ elif MODEL_TYPE == 'adaboost':
 
         # Train model using weighted sampling
         for epoch in range(NUM_EPOCHS_PER_ESTIMATOR):
-             # Pass the numpy weights, train_one_epoch will handle sampler creation
-             epoch_loss = train_one_epoch(model, full_train_subset_loader, criterion, optimizer, device, sample_weights=sample_weights)
-             if (epoch + 1) % 5 == 0:
-                 print(f' Estimator {i+1}, Epoch [{epoch + 1}], Loss: {epoch_loss:.4f}')
-                 if USE_WANDB:
-                      wandb.log({f"estimator_{i+1}_epoch": epoch+1, f"estimator_{i+1}_loss": epoch_loss})
-
+            # Pass the numpy weights, train_one_epoch will handle sampler creation
+            epoch_loss = train_one_epoch(model, full_train_subset_loader, criterion, optimizer, device, sample_weights=sample_weights)
+            if (epoch + 1) % 5 == 0:
+                print(f' Estimator {i+1}, Epoch [{epoch + 1}], Loss: {epoch_loss:.4f}')
+                if USE_WANDB:
+                    wandb.log({f"estimator_{i+1}_epoch": epoch + 1, f"estimator_{i+1}_loss": epoch_loss})
 
         # Calculate weighted error on the training subset
         model.eval()
         estimator_preds = []
         with torch.no_grad():
-            for inputs, _ in full_train_subset_loader: # Don't need labels here
+            for inputs, _ in full_train_subset_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 _, predicted = torch.max(outputs, 1)
@@ -375,8 +363,6 @@ elif MODEL_TYPE == 'adaboost':
 
         # Update sample weights
         # Increase weight for misclassified samples, decrease for correct ones
-        # weight_update = np.exp(alpha * misclassified_mask) # Incorrect for multi-class
-        # AdaBoost.M1 weight update: w * exp(alpha) for misclassified
         sample_weights *= np.exp(alpha * misclassified_mask)
         # Normalize weights
         sample_weights /= np.sum(sample_weights)
@@ -384,19 +370,16 @@ elif MODEL_TYPE == 'adaboost':
         estimators.append(model.eval())
         alphas.append(alpha)
 
-        if epsilon >= (1.0 - 1.0/num_classes):
-             print(f" Estimator {i+1} is worse than random guessing. Stopping early.")
-             if i == 0 : # Handle case where first estimator is bad
-                 print("Warning: First estimator is poor. Ensemble may not perform well.")
-                 # Optionally keep it anyway or handle differently
-             else:
-                 # Remove the last estimator and alpha
-                 estimators.pop()
-                 alphas.pop()
-             break # Stop boosting if error is too high
+        if epsilon >= (1.0 - 1.0 / num_classes):
+            print(f" Estimator {i+1} is worse than random guessing. Stopping early.")
+            if i == 0:
+                print("Warning: First estimator is poor. Ensemble may not perform well.")
+            else:
+                # Remove the last estimator and alpha
+                estimators.pop()
+                alphas.pop()
+            break  # Stop boosting if error is too high
 
-
-    # Evaluate the AdaBoost ensemble
     print("\n--- Evaluating AdaBoost Ensemble ---")
     all_weighted_preds = np.zeros((len(val_dataset), num_classes))
     all_labels_val = []
@@ -413,12 +396,11 @@ elif MODEL_TYPE == 'adaboost':
             batch_size_current = inputs.size(0)
             for model, alpha in zip(estimators, alphas):
                 outputs = model(inputs)
-                _, predicted_class = torch.max(outputs, 1) # Hard predictions per estimator
+                _, predicted_class = torch.max(outputs, 1)
                 # Add alpha to the predicted class vote for each sample in the batch
                 for j in range(batch_size_current):
                     all_weighted_preds[current_idx + j, predicted_class[j].item()] += alpha
             current_idx += batch_size_current
-
 
     final_preds = np.argmax(all_weighted_preds, axis=1)
 
@@ -430,7 +412,6 @@ elif MODEL_TYPE == 'adaboost':
 
     if USE_WANDB:
         wandb.log({"final_ensemble_val_accuracy": ensemble_val_acc, "final_ensemble_val_balanced_accuracy": ensemble_val_bal_acc})
-    # Save estimators and alphas if needed
     save_obj = {'estimators': [est.state_dict() for est in estimators], 'alphas': alphas}
     torch.save(save_obj, f"adaboost_mlp_{cur_date_time}.pt")
 
@@ -441,7 +422,7 @@ else:
 if USE_WANDB:
     wandb.finish()
 
-print("\Training finished.")
+print("Training finished.")
 
 
 # ========================================
@@ -459,52 +440,40 @@ else:
         test_data_dict = pickle.load(f)
 
     X_test_df = test_data_dict['X_test']
-    test_ids = X_test_df['Id'] # Keep track of original IDs
-    X_test_df = X_test_df.drop(columns=['Id']) # Drop Id before converting to numpy
+    test_ids = X_test_df['Id']  # Keep track of original IDs
+    X_test_df = X_test_df.drop(columns=['Id'])  # Drop Id before converting to numpy
 
     # Ensure columns match training data (should be handled by preprocessing)
-    if not all(X_test_df.columns == X_df.columns): # X_df is from training data loading
-         print("WARNING: Test columns do not perfectly match training columns AFTER loading!")
-         # Attempt to reorder/add/remove based on training columns if needed
-         train_cols_no_id = [col for col in final_columns if col != 'Id'] # Use final_columns from mappings
-         X_test_df = X_test_df.reindex(columns=train_cols_no_id, fill_value=0)
-         print("Columns realigned.")
-
+    if not all(X_test_df.columns == X_df.columns):  # X_df is from training data loading
+        print("WARNING: Test columns do not perfectly match training columns AFTER loading!")
+        # Attempt to reorder/add/remove based on training columns if needed
+        train_cols_no_id = [col for col in final_columns if col != 'Id']
+        X_test_df = X_test_df.reindex(columns=train_cols_no_id, fill_value=0)
+        print("Columns realigned.")
 
     X_test_np = X_test_df.values.astype(np.float32)
-    test_dataset_obj = MixedInputDataset(X_test_np) # No labels for test set
+    test_dataset_obj = MixedInputDataset(X_test_np)  # No labels for test set
     test_loader = DataLoader(test_dataset_obj, batch_size=BATCH_SIZE * 2, shuffle=False)
-
-    # --- Load Trained Model(s) ---
-    # This part depends heavily on how you saved models during training.
-    # Assuming you stored the final models in variables like 'model' (for single)
-    # or 'estimators' and potentially 'alphas' (for ensembles).
-    # If you saved to disk, you'd load them here instead.
 
     final_test_preds = []
 
     if MODEL_TYPE == 'single':
         if 'model' not in locals() or best_model_state is None:
-             print("ERROR: Single model not found or not trained properly with best state saved.")
-             # Add logic here to load model from file if you saved it previously
-             # model = MLPWithEmbeddings(**model_args).to(device)
-             # model.load_state_dict(torch.load("path/to/single_mlp_best.pt"))
-             # model.eval() # Set to evaluation mode
+            print("ERROR: Single model not found or not trained properly with best state saved.")
         else:
-             print("Using trained single model (best state based on validation).")
-             model.load_state_dict(best_model_state) # Load best validation state
-             model.eval() # Ensure evaluation mode
-             with torch.no_grad():
-                 for inputs in tqdm(test_loader, desc="Predicting Test (Single)"):
-                     inputs = inputs.to(device)
-                     outputs = model(inputs)
-                     _, predicted = torch.max(outputs, 1)
-                     final_test_preds.extend(predicted.cpu().numpy())
+            print("Using trained single model (best state based on validation).")
+            model.load_state_dict(best_model_state)
+            model.eval()
+            with torch.no_grad():
+                for inputs in tqdm(test_loader, desc="Predicting Test (Single)"):
+                    inputs = inputs.to(device)
+                    outputs = model(inputs)
+                    _, predicted = torch.max(outputs, 1)
+                    final_test_preds.extend(predicted.cpu().numpy())
 
     elif MODEL_TYPE == 'bagging':
         if 'estimators' not in locals() or not estimators:
             print("ERROR: Bagging estimators not found or not trained.")
-            # Add logic here to load estimators if saved to file
         else:
             print(f"Using trained bagging ensemble ({len(estimators)} estimators).")
             all_test_probs = []
@@ -512,8 +481,8 @@ else:
                 for inputs in tqdm(test_loader, desc="Predicting Test (Bagging)"):
                     inputs = inputs.to(device)
                     batch_probs = []
-                    for est in estimators: # Use the stored estimators list
-                        est.eval() # Ensure eval mode
+                    for est in estimators:
+                        est.eval()
                         outputs = est(inputs)
                         probs = torch.softmax(outputs, dim=1)
                         batch_probs.append(probs.cpu().numpy())
@@ -522,12 +491,10 @@ else:
             final_probs = np.concatenate(all_test_probs, axis=0)
             final_test_preds = np.argmax(final_probs, axis=1)
 
-
     elif MODEL_TYPE == 'adaboost':
-         if 'estimators' not in locals() or not estimators or 'alphas' not in locals() or not alphas:
-             print("ERROR: AdaBoost estimators/alphas not found or not trained.")
-             # Add logic here to load estimators/alphas if saved to file
-         else:
+        if 'estimators' not in locals() or not estimators or 'alphas' not in locals() or not alphas:
+            print("ERROR: AdaBoost estimators/alphas not found or not trained.")
+        else:
             print(f"Using trained AdaBoost ensemble ({len(estimators)} estimators).")
             num_test_samples = len(test_dataset_obj)
             all_weighted_preds_test = np.zeros((num_test_samples, num_classes))
@@ -536,8 +503,8 @@ else:
                 for inputs in tqdm(test_loader, desc="Predicting Test (AdaBoost)"):
                     inputs = inputs.to(device)
                     batch_size_current = inputs.size(0)
-                    for model, alpha in zip(estimators, alphas): # Use stored lists
-                        model.eval() # Ensure eval mode
+                    for model, alpha in zip(estimators, alphas):
+                        model.eval()
                         outputs = model(inputs)
                         _, predicted_class = torch.max(outputs, 1)
                         for j in range(batch_size_current):
@@ -548,11 +515,8 @@ else:
     else:
         print(f"Prediction logic not implemented for MODEL_TYPE: {MODEL_TYPE}")
 
-
     # --- Format Submission ---
-    if len(final_test_preds) > 0: # Check if predictions were generated
-        # Need the reverse mapping from index to Outcome string
-        # Original mapping used in preprocessing:
+    if len(final_test_preds) > 0:
         outcome_mapping = {
             'Return to Owner': 0, 'Transfer': 1, 'Adoption': 2,
             'Died': 3, 'Euthanasia': 4
@@ -563,14 +527,9 @@ else:
 
         submission_df = pd.DataFrame({'Id': test_ids, 'Outcome Type': predicted_labels})
 
-        # Ensure results directory exists
         os.makedirs('results', exist_ok=True)
         submission_filename = os.path.join('results', f'submission_{MODEL_TYPE}_{cur_date_time if "cur_date_time" in locals() else "mlp"}.csv')
         submission_df.to_csv(submission_filename, index=False)
         print(f"\nSubmission file saved to: {submission_filename}")
     else:
         print("\nNo predictions generated. Submission file not created.")
-
-# ========================================
-# === END OF PREDICTION ON TEST DATA =====
-# ========================================

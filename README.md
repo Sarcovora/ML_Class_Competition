@@ -7,6 +7,7 @@ Some things that produced increasingly good results as they were implemented ove
 - tuning the number of layers and neurons in the MLP
 - setting the cross entropy loss to incorporate class balancing, aka incorporating the accuracy that we would be evaluated on
     - this ended up leading to very accurate validation accuracies
+- dropout
 
 other things that were tried but did not work as well:
 - adaboosting: hypothesized that this would work well but it got easily outperformed by the bagging strategy even without much tuning
