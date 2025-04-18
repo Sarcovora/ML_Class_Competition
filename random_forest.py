@@ -1,8 +1,12 @@
 import pandas as pd
+import numpy as np
 
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score, GridSearchCV, cross_val_predict
 from sklearn.metrics import classification_report
-from sklearn.ensemble import RandomForestClassifier
 
 
 def convert_to_weeks(value):
@@ -20,7 +24,6 @@ def convert_to_weeks(value):
         # Convert days to 0 weeks
         return 0
     return 0  # In case of unexpected values
-
 
 def extract_month_year(df, column='Intake Time'):
     """
@@ -43,7 +46,7 @@ def extract_month_year(df, column='Intake Time'):
     return df
 
 
-def process_data(data):
+def process_data(data):    
     data = data.drop(columns=['Id', 'Name', 'Outcome Time'])
     data = data.drop(columns=['Found Location', 'Date of Birth'])
     # data = data.drop(columns=['Breed', 'Color'])
@@ -54,34 +57,48 @@ def process_data(data):
     data = extract_month_year(data, column='Intake Time')
     data = data.drop(columns=['Intake Time'])
     print(data.columns)
-    data.head()
     return data
 
-
-process_count = 12
+def process_test_data(data):    
+    data = data.drop(columns=['Id'])
+    data = data.drop(columns=['Found Location', 'Date of Birth'])
+    # data = data.drop(columns=['Breed', 'Color'])
+    data = data.dropna()
+    print(data.columns)
+    data = pd.get_dummies(data, columns=['Intake Condition', 'Intake Type', 'Animal Type', 'Sex upon Intake', 'Breed', 'Color'])
+    data['Age upon Intake'] = data['Age upon Intake'].apply(convert_to_weeks)
+    data = extract_month_year(data, column='Intake Time')
+    data = data.drop(columns=['Intake Time'])
+    print(data.columns)
+    return data
 
 train_data = pd.read_csv('train.csv', header=0)
 train_data = process_data(train_data)
-train_data.head()
+print(train_data.head())
 
 train_x = train_data.drop('Outcome Type', axis=1)
 train_y = train_data['Outcome Type']
-forest = RandomForestClassifier(n_jobs=process_count)
 
-param_grid = {
-    'n_estimators': [50, 100, 150, 250, 500],
-    'min_samples_leaf': [25, 50, 100, 500, 1000],
-    'max_features': [0.5, 0.7, 0.85, 0.95, 1.0],
-}
+test_data = pd.read_csv('test.csv', header=0)
+test_data = process_test_data(test_data)
+test_data = test_data.reindex(columns=train_data.columns, fill_value=0)
+test_data = test_data.drop(columns=['Outcome Type'])
+print(test_data.head())
 
-# param_grid = {
-#     'n_estimators': [100, 250, 500],
-#     'min_samples_leaf': [1, 5, 10, 25, 50],
-#     'max_features': ['sqrt', 0.6, 0.8, 1.0],
-# }
+forest = RandomForestClassifier(n_estimators=150, min_samples_leaf=125, max_features=0.45, class_weight="balanced")
+accuracy = cross_val_score(forest, train_x, train_y, cv=5, scoring='balanced_accuracy')
+print(f"Accuracy: {accuracy}")
 
-grid_search = GridSearchCV(forest, param_grid, cv=5, scoring='accuracy', n_jobs=process_count, verbose=3)
-grid_search.fit(train_x, train_y)
+model = forest.fit(train_x, train_y)
 
-print(f"best params: {grid_search.best_params_}")
-print(f"best score: {grid_search.best_score_}")
+print("=== PREDICTIONS ===")
+
+predictions = forest.predict(test_data)
+
+df = pd.DataFrame({
+    "Id": np.arange(1, len(predictions) + 1),
+    "Outcome Type": predictions
+})
+print(df['Outcome Type'].value_counts())
+
+df.to_csv("predictions.csv", index=False)
