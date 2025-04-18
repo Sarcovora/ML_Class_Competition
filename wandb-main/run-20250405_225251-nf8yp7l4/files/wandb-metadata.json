@@ -1,0 +1,42 @@
+{
+  "os": "Linux-6.8.0-1021-aws-x86_64-with-glibc2.35",
+  "python": "CPython 3.9.21",
+  "startedAt": "2025-04-06T03:52:51.477166Z",
+  "program": "/home/ekuo/ml_course_project/ML_Class_Competition/neuralnet/mlp.py",
+  "codePath": "neuralnet/mlp.py",
+  "git": {
+    "remote": "git@github.com:Sarcovora/ML_Class_Competition.git",
+    "commit": "169cdf7e8bd88759d4bf11c0cf98a82c48929531"
+  },
+  "email": "evan.kuo.edu@gmail.com",
+  "root": "/home/ekuo/ml_course_project/ML_Class_Competition",
+  "host": "core-v21",
+  "executable": "/home/ekuo/miniconda3/envs/ml/bin/python",
+  "codePathLocal": "neuralnet/mlp.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 24,
+  "gpu": "NVIDIA GeForce RTX 3080 Ti",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "982818799616",
+      "used": "500971208704"
+    }
+  },
+  "memory": {
+    "total": "67299184640"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 24
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 3080 Ti",
+      "memoryTotal": "12884901888",
+      "cudaCores": 10240,
+      "architecture": "Ampere"
+    }
+  ],
+  "cudaVersion": "12.6"
+}
