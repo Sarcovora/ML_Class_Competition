@@ -1,0 +1,1 @@
+This branch contains the code used in the first iteration of our MLP. It was a non-ensembled model with 4 layers - input, 2 hidden layers, output layer. It's performance was pretty poor so we ended up scrapping it and going with other methods. (The bagged MLP that is seen in the other branch ended up being our best model.)
