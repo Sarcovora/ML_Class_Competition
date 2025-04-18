@@ -1,0 +1,8 @@
+This branch contains the random forest model that we implemented which in the end was able to achieve a 47.61% accuracy. Included are some of the different version files of our hyperparameter tuning and model files where we tried some of the following things:
+ - tuning number of estimators
+ - tuning min samples per leaf
+ - tuning max features to consider at each step
+ - different feature engineering
+ - different scoring/accuracy functions
+other things that were tried that did not work well:
+ - tuning minimum entropy increase which consistently found 0.0 to be the best value 
