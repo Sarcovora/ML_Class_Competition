@@ -1,0 +1,5 @@
+This branch contains our implementation of KNN where we did some basic feature engineering and hyperparameter tuning. The values we hyperparameter tuned were:
+ - PCA number of compnents
+ - KNN number of neighbors
+
+One thing we tried that didn't yeild good results was building a separate model for Cats and Dogs.
